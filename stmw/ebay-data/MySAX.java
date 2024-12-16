@@ -6,11 +6,15 @@ import org.xml.sax.*;
 import org.xml.sax.helpers.DefaultHandler;
 
 public class MySAX extends DefaultHandler {
-    private List<String[]> csvData = new ArrayList<>();
+    private List<String[]> itemCsvData = new ArrayList<>();
+    private List<String[]> sellerCsvData = new ArrayList<>();
+    private List<String[]> bidderCsvData = new ArrayList<>();
+    private List<String[]> bidInfoCsvData = new ArrayList<>();
+    private List<String[]> categoryCsvData = new ArrayList<>();
     private StringBuilder currentValue = new StringBuilder();
     private String currentElement = "";
-    private String itemID, name, category, currently, firstBid, numberOfBids, location, latitude, longitude, country, started, ends, sellerRating, userID, description;
-
+    private String itemID, name, category, currently, buyPrice, firstBid, numberOfBids, location, latitude, longitude, country, started, ends, sellerRating, userID, description, bidderID, bidderRating, bidderLocation, bidderCountry, bidTime, bidAmount;
+    private boolean bidderLoc = false;
     public static void main(String args[]) throws Exception {
         // Create SAX parser instance
         SAXParserFactory factory = SAXParserFactory.newInstance();
@@ -21,7 +25,11 @@ public class MySAX extends DefaultHandler {
         for (String fileName : args) {
             System.out.println("Processing file: " + fileName);
             parser.parse(new InputSource(new FileReader(fileName)), handler);
-            handler.writeCSV(fileName.replace(".xml", ".csv"));
+            handler.writeCSV("item.csv", handler.itemCsvData);
+            handler.writeCSV("seller.csv", handler.sellerCsvData);
+            handler.writeCSV("bidder.csv", handler.bidderCsvData);
+            handler.writeCSV("bidinfo.csv", handler.bidInfoCsvData);
+            handler.writeCSV("category.csv", handler.categoryCsvData);
         }
     }
 
@@ -30,16 +38,24 @@ public class MySAX extends DefaultHandler {
     }
 
     // CSV'ye veri yazma
-    private void writeCSV(String csvFilePath) throws IOException {
+    private void writeCSV(String csvFilePath, List<String[]> data) throws IOException {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFilePath))) {
-            // CSV başlıkları
-            writer.write("ItemID,Name,Category,Currently,First_Bid,Number_of_Bids,Location, Latitude, Longitude, Country,Started,Ends,Seller_Rating,UserID,Description\n");
+            if (csvFilePath.equals("item.csv")) {
+                writer.write("ItemID,Name,SellerID,Currently,Buy_Price,First_bid,Location,Latitude,Longitude,Country,Started,Ends,Description\n");
+            } else if (csvFilePath.equals("seller.csv")) {
+                writer.write("UserID,Rating\n");
+            } else if (csvFilePath.equals("bidder.csv")) {
+                writer.write("BidderID,Rating,Location,Country\n");
+            } else if (csvFilePath.equals("bidinfo.csv")) {
+                writer.write("ItemID,BidderID,Time,Amount\n");
+            } else if (csvFilePath.equals("category.csv")) {
+                writer.write("Category,ItemID\n");
+            }
 
-            // CSV verileri
-            for (String[] row : csvData) {
-                // Her hücreyi escape et
+            // Verileri CSV formatında yazma
+            for (String[] row : data) {
                 String[] escapedRow = Arrays.stream(row)
-                    .map(this::escapeCsvValue)  // escape işlemi
+                    .map(this::escapeCsvValue)  // Escape işlemi
                     .toArray(String[]::new);
                 writer.write(String.join(",", escapedRow));
                 writer.write("\n");
@@ -53,15 +69,12 @@ public class MySAX extends DefaultHandler {
             return money;
         else {
             double amount = 0.0;
-            NumberFormat nf = NumberFormat.getCurrencyInstance(Locale.US);
             try {
-                amount = nf.parse(money).doubleValue();
-            } catch (ParseException e) {
+                amount = Double.parseDouble(money.replaceAll("[^\\d.]", ""));
+            } catch (NumberFormatException e) {
                 System.err.println("Invalid money format: " + money);
-                System.exit(20);
             }
-            nf.setGroupingUsed(false);
-            return nf.format(amount).substring(1);
+            return String.format("%.2f", amount);
         }
     }
 
@@ -70,10 +83,8 @@ public class MySAX extends DefaultHandler {
         if (value == null) {
             return "";
         }
-        // Her çift tırnağı iki çift tırnakla kaçırıyoruz
         value = value.replace("\"", "\"\"");
 
-        // Eğer değer virgül, yeni satır, satır başı, veya çift tırnak içeriyorsa, değeri çift tırnakla sarıyoruz
         if (value.contains(",") || value.contains("\n") || value.contains("\r") || value.contains("\"")) {
             value = "\"" + value + "\"";
         }
@@ -81,48 +92,51 @@ public class MySAX extends DefaultHandler {
         return value;
     }
 
-
     ////////////////////////////////////////////////////////////////////
     // Event handlers.
     ////////////////////////////////////////////////////////////////////
 
     @Override
     public void startDocument() {
-        csvData.clear(); // Her yeni dosya için CSV verilerini sıfırlıyoruz
+        // Her yeni dosya için CSV verilerini sıfırlıyoruz
+        itemCsvData.clear();
+        sellerCsvData.clear();
+        bidderCsvData.clear();
+        bidInfoCsvData.clear();
+        categoryCsvData.clear();
     }
 
     @Override
     public void endDocument() {
     }
-
+   
     @Override
     public void startElement(String uri, String name, String qName, Attributes atts) {
         currentElement = qName;
 
-        if ("".equals(uri)) {
-            System.out.println("Start element: " + qName);
-        } else {
-            System.out.println("Start element: {" + uri + "}" + name);
+        if (qName.equals("Location")) {
+            latitude = atts.getValue("Latitude");
+            longitude = atts.getValue("Longitude");
         }
-
         // Etiketler için başlangıç işlemleri
         if (qName.equals("Item")) {
-            // ItemID gibi özelliklere bu şekilde erişilebilir
-            itemID = atts.getValue("ItemID");  // ItemID özelliğini alıyoruz
-            this.name = category = currently = firstBid = numberOfBids = location = latitude = longitude = country = started = ends = sellerRating = userID = description = "";
+            itemID = atts.getValue("ItemID");
+            this.name = category = currently = buyPrice = firstBid = numberOfBids = location = latitude = longitude = country = started = ends = sellerRating = userID = description = "";
         }
 
         if (qName.equals("Seller")) {
-            // Seller elemanındaki Rating ve UserID özelliklerini alıyoruz
-            sellerRating = atts.getValue("Rating");  // Rating özelliğini alıyoruz
-            userID = atts.getValue("UserID");  // UserID özelliğini alıyoruz
+            sellerRating = atts.getValue("Rating");
+            userID = atts.getValue("UserID");
         }
 
-        if (qName.equals("Location")) {
-            // Seller elemanındaki Rating ve UserID özelliklerini alıyoruz
-            latitude = atts.getValue("Latitude");  // Rating özelliğini alıyoruz
-            longitude = atts.getValue("Longitude");  // UserID özelliğini alıyoruz
+        if (qName.equals("Bidder")) {
+            bidderLoc = true;
+            bidderLocation = ""; // Yeni bidder için sıfırla
+            bidderCountry = "";
+            bidderID = atts.getValue("UserID");
+            bidderRating = atts.getValue("Rating");
         }
+
         // Etiketin altındaki özellikleri yazdırma
         for (int i = 0; i < atts.getLength(); i++) {
             System.out.println("Attribute: " + atts.getLocalName(i) + "=" + atts.getValue(i));
@@ -131,18 +145,39 @@ public class MySAX extends DefaultHandler {
 
     @Override
     public void endElement(String uri, String name, String qName) {
-        if ("".equals(uri)) {
-            System.out.println("End element: " + qName);
-        } else {
-            System.out.println("End element:   {" + uri + "}" + name);
+        // Etiket bittiğinde veri ekleme
+        System.out.println(this.name);
+        if (qName.equals("Item")) {
+            // Item bilgilerini CSV'ye ekliyoruz, latitude ve longitude bilgilerini de ekliyoruz
+            itemCsvData.add(new String[] {
+                itemID, this.name, userID, currently, buyPrice, firstBid, location, latitude, longitude, country, started, ends, description
+            });
+            System.out.println("Item Added: " + Arrays.toString(new String[]{
+             location, latitude, longitude, country
+                }));;
         }
 
-        // Etiket bittiğinde veri ekleme
-        if (qName.equals("Item")) {
-            System.out.println("Adding item to CSV data: " + itemID + ", " + this.name + ", " + category); // Debug log
-            csvData.add(new String[]{
-                itemID, this.name, category, currently, firstBid, numberOfBids, location, latitude, longitude, country, started, ends, sellerRating, userID, description
-            });
+        if (qName.equals("Seller")) {
+            // Seller bilgilerini CSV'ye ekliyoruz
+            sellerCsvData.add(new String[]{userID, sellerRating});
+        }
+
+        if (qName.equals("Bidder")) {
+            // Bidder bilgilerini CSV'ye ekliyoruz
+            bidderLoc = false;
+            bidderCsvData.add(new String[]{bidderID, bidderRating, bidderLocation, bidderCountry});
+        }
+
+        if (qName.equals("Category")) {
+            // Category bilgilerini CSV'ye ekliyoruz
+            String[] categories = category.split(";");
+            for (String cat : categories) {
+                categoryCsvData.add(new String[]{cat, itemID});
+            }
+        }
+        if (qName.equals("Bid")) {
+            // BidInfo bilgilerini CSV'ye ekliyoruz
+            bidInfoCsvData.add(new String[]{itemID, bidderID, bidTime, bidAmount});
         }
     }
 
@@ -153,29 +188,43 @@ public class MySAX extends DefaultHandler {
         if (!content.isEmpty()) {
             switch (currentElement) {
                 case "Name":
-                    name = content;
+                    name = content; // İsim değeri alındığında, name değişkenine atanacak
+                    System.out.println("NAME:"+ name);
                     break;
                 case "Category":
                     category = category == null ? content : category + ";" + content; // Birden fazla kategori varsa, birleştir
-                    System.out.println(category);
                     break;
                 case "Currently":
                     currently = strip(content);
                     break;
-                case "Buy_Price":
-                    buyPrice = strip(content);
-                    break;
                 case "First_Bid":
                     firstBid = strip(content);
+                    break;
+                case "Buy_Price":
+                    buyPrice = strip(content);
                     break;
                 case "Number_of_Bids":
                     numberOfBids = content;
                     break;
                 case "Location":
-                    location = content;
+                    if (bidderLoc) {
+                        bidderLocation = content;  // Bidder'ın içindeki Location
+                    } else {
+                        location = content;  // Item için Location
+                    }
+                    break;
+                case "Latitude":
+                    latitude = content;
+                    break;
+                case "Longitude":
+                    longitude = content;
                     break;
                 case "Country":
-                    country = content;
+                    if (bidderLoc) {
+                        bidderCountry = content;  // Bidder'ın içindeki Country
+                    } else {
+                        country = content;  // Item için Country
+                    }
                     break;
                 case "Started":
                     started = content;
@@ -184,12 +233,13 @@ public class MySAX extends DefaultHandler {
                     ends = content;
                     break;
                 case "Description":
-                    // Eğer description 4000 karakterden fazla ise, ilk 4000 karakteri al
-                    if (content.length() > 4000) {
-                        description = content.substring(0, 4000);
-                    } else {
-                        description = content;
-                    }
+                    description = content.length() > 4000 ? content.substring(0, 4000) : content;
+                    break;
+                case "Time":
+                    bidTime = content;
+                    break;
+                case "Amount":
+                    bidAmount = strip(content);
                     break;
             }
         }
