@@ -1,127 +1,255 @@
-/* Parser skeleton for processing item-???.xml files. Must be compiled in
- * JDK 1.5 or above.
- *
- * Instructions:
- *
- * This program processes all files passed on the command line (to parse
- * an entire diectory, type "java MyParser myFiles/*.xml" at the shell).
- *
- */
-
- import java.io.FileReader;
- import java.text.*;
- import java.util.*;
- import javax.xml.parsers.SAXParser;
- import javax.xml.parsers.SAXParserFactory;
- import org.xml.sax.*;
- import org.xml.sax.helpers.DefaultHandler;
-
+import java.io.*;
+import java.text.*;
+import java.util.*;
+import javax.xml.parsers.*;
+import org.xml.sax.*;
+import org.xml.sax.helpers.DefaultHandler;
 
 public class MySAX extends DefaultHandler {
-	public static void main(String args[]) throws Exception {
-		// Create SAX parser instance
-		SAXParserFactory factory = SAXParserFactory.newInstance();
-		SAXParser parser = factory.newSAXParser();
-		MySAX handler = new MySAX();
+    private Set<String> itemCsvData = new HashSet<>();
+    private Set<String> sellerCsvData = new HashSet<>();
+    private Set<String> bidderCsvData = new HashSet<>();
+    private Set<String> bidInfoCsvData = new HashSet<>();
+    private Set<String> categoryCsvData = new HashSet<>();
+    Integer sayi = 0;
+    private StringBuilder currentValue = new StringBuilder();
+    private String currentElement = "";
+    private String itemID, name, category, currently, buyPrice, firstBid, numberOfBids, location, latitude, longitude, country, started, ends, sellerRating, userID, description, bidderID, bidderRating, bidderLocation, bidderCountry, bidTime, bidAmount;
+    private boolean bidderLoc = false;
+    private List<String> categories = new ArrayList<>(); // Kategoriler için liste ekledim
+    private boolean firstItem = false; // İlk dosya kontrolü için bayrak
 
-		// Parse each file provided on the command line
-		for (String fileName : args) {
-			System.out.println("Processing file: " + fileName);
-			parser.parse(new InputSource(new FileReader(fileName)), handler);
-		}
-	}
+    public static void main(String[] args) throws Exception {
+        SAXParserFactory factory = SAXParserFactory.newInstance();
+        SAXParser parser = factory.newSAXParser();
+        MySAX handler = new MySAX();
 
-	public MySAX() {
-		super();
-	}
-
-	/*
-	 * Returns the amount (in XXXXX.xx format) denoted by a money-string
-	 * like $3,453.23. Returns the input if the input is an empty string.
-	 */
-    static String strip(String money) {
-        if (money.equals(""))
-            return money;
-        else {
-            double amount = 0.0;
-            NumberFormat nf = NumberFormat.getCurrencyInstance(Locale.US);
-            try {
-                amount = nf.parse(money).doubleValue();
-            } catch (ParseException e) {
-                System.err.println("Invalid money format: " + money);
-                System.exit(20);
-            }
-            nf.setGroupingUsed(false);
-            return nf.format(amount).substring(1);
+        for (String fileName : args) {
+            parser.parse(new InputSource(new FileReader(fileName)), handler);
+            System.out.println(fileName);
+            handler.writeCSV("item.csv", handler.itemCsvData, true); // Başlık eklemek için true
+            handler.writeCSV("seller.csv", handler.sellerCsvData, true); // Başlık eklemek için true
+            handler.writeCSV("bidder.csv", handler.bidderCsvData, true); // Başlık eklemek için true
+            handler.writeCSV("bidinfo.csv", handler.bidInfoCsvData, true); // Başlık eklemek için true
+            handler.writeCSV("category.csv", handler.categoryCsvData, true); // Başlık eklemek için true
         }
     }
 
-	////////////////////////////////////////////////////////////////////
-	// Event handlers.
-	////////////////////////////////////////////////////////////////////
+    public MySAX() {
+        super();
+    }
 
-	@Override
-	public void startDocument() {
-		System.out.println("Start document");
-		// TODO
-	}
+    private void writeCSV(String csvFilePath, Set<String> data, boolean isFirstFile) throws IOException {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFilePath, true))) { // 'true' parametresi ekledik ki veriler eklenerek yazılsın
+            if (isFirstFile) { // İlk dosya ise başlıkları yaz
+                if (csvFilePath.equals("item.csv")) {
+                    writer.write("ItemID,Name,SellerID,Currently,Buy_Price,First_bid,Location,Latitude,Longitude,Country,Started,Ends,Description\n");
+                } else if (csvFilePath.equals("seller.csv")) {
+                    writer.write("UserID,Rating\n");
+                } else if (csvFilePath.equals("bidder.csv")) {
+                    writer.write("BidderID,Rating,Location,Country\n");
+                } else if (csvFilePath.equals("bidinfo.csv")) {
+                    writer.write("ItemID,BidderID,Time,Amount\n");
+                } else if (csvFilePath.equals("category.csv")) {
+                    writer.write("Category,ItemID\n");
+                }
+            }
 
-	@Override
-	public void endDocument() {
-		System.out.println("End document");
-		// TODO
-	}
+            for (String row : data) {
+                writer.write(row);
+                writer.write("\n");
+            }
+        }
+    }
 
-	@Override
-	public void startElement(String uri, String name, String qName, Attributes atts) {
-		if ("".equals(uri))
-			System.out.println("Start element: " + qName);
-		else
-			System.out.println("Start element: {" + uri + "}" + name);
-		for (int i = 0; i < atts.getLength(); i++) {
-			System.out.println("Attribute: " + atts.getLocalName(i) + "=" + atts.getValue(i));
-		}
-		// TODO
-	}
+    static String strip(String money) {
+        if (money.equals("")) return money;
+        else {
+            double amount = 0.0;
+            try {
+                amount = Double.parseDouble(money.replaceAll("[^\\d.]", ""));
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid money format: " + money);
+            }
+            return String.format("%.2f", amount);
+        }
+    }
 
-	@Override
-	public void endElement(String uri, String name, String qName) {
-		if ("".equals(uri))
-			System.out.println("End element: " + qName);
-		else
-			System.out.println("End element:   {" + uri + "}" + name);
+    private String escapeCsvValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        value = value.replace("\"", "\"\"");
+        if (value.contains(",") || value.contains("\n") || value.contains("\r") || value.contains("\"")) {
+            value = "\"" + value + "\"";
+        }
+        return value;
+    }
 
-		// TODO
-	}
+    // XML'deki özel karakterleri çözümleme (örneğin, &amp; -> &)
+    private String decodeXmlSpecialCharacters(String input) {
+        if (input == null) {
+            return "";
+        }
+        return input.replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&apos;", "'");
+    }
 
-	@Override
-	public void characters(char ch[], int start, int length) {
-		System.out.print("Characters:    \"");
-		for (int i = start; i < start + length; i++) {
-			switch (ch[i]) {
-				case '\\':
-					System.out.print("\\\\");
-					break;
-				case '"':
-					System.out.print("\\\"");
-					break;
-				case '\n':
-					System.out.print("\\n");
-					break;
-				case '\r':
-					System.out.print("\\r");
-					break;
-				case '\t':
-					System.out.print("\\t");
-					break;
-				default:
-					System.out.print(ch[i]);
-					break;
-			}
-		}
-		System.out.print("\"\n");
-	}
+    @Override
+    public void startDocument() {
+        itemCsvData.clear();
+        sellerCsvData.clear();
+        bidderCsvData.clear();
+        bidInfoCsvData.clear();
+        categoryCsvData.clear();
+        firstItem = true; // Her yeni dosya için başlık yazılacak
+    }
 
-	// TODO
+    @Override
+    public void endDocument() {
+    }
 
+    @Override
+    public void startElement(String uri, String name, String qName, Attributes atts) {
+        currentElement = qName;
+
+        if (qName.equals("Location")) {
+            latitude = atts.getValue("Latitude");
+            longitude = atts.getValue("Longitude");
+        }
+        if (qName.equals("Item")) {
+            itemID = atts.getValue("ItemID");
+            this.name = category = currently = buyPrice = firstBid = numberOfBids = location = latitude = longitude = country = started = ends = sellerRating = userID = description = "";
+            categories.clear(); // Her item için kategorileri temizle
+        }
+
+        if (qName.equals("Seller")) {
+            sellerRating = atts.getValue("Rating");
+            userID = atts.getValue("UserID");
+        }
+
+        if (qName.equals("Bidder")) {
+            bidderLoc = true;
+            bidderLocation = ""; 
+            bidderCountry = "";
+            bidderID = atts.getValue("UserID");
+            bidderRating = atts.getValue("Rating");
+        }
+    }
+
+    @Override
+    public void endElement(String uri, String name, String qName) {
+        List<String> tempList = Arrays.asList("&", "'", "<", ">", "\"");
+        Set<String> specialValues = new HashSet<>(tempList);
+
+        if (qName.equals("Item")) {
+            // Kategorileri yazarken her kategori için ItemID ekle
+            List<String> result = new ArrayList<>();
+            for (int i = 0; i < categories.size(); i++) {
+                if (specialValues.contains(categories.get(i))) {
+                    // Önceki ve sonraki elemanları birleştir
+                    if (i > 0 && i < categories.size() - 1) {
+                        String combined = categories.get(i - 1) + categories.get(i) + categories.get(i + 1);
+                        result.set(result.size() - 1, combined); // Son eklenen elemanı güncelle
+                        i++; // Bir sonraki eleman atlanır (zaten birleştirildi)
+                    }
+                } else {
+                    // Normal elemanları ekle
+                    result.add(categories.get(i));
+                }
+            }
+            
+
+            for (String category : result) {
+                String row = String.join(",", escapeCsvValue(category), escapeCsvValue(itemID));
+                categoryCsvData.add(row);
+            }
+
+            String row = String.join(",", escapeCsvValue(itemID), escapeCsvValue(this.name), escapeCsvValue(userID), escapeCsvValue(currently),
+                    escapeCsvValue(buyPrice), escapeCsvValue(firstBid), escapeCsvValue(location), escapeCsvValue(latitude), escapeCsvValue(longitude),
+                    escapeCsvValue(country), escapeCsvValue(started), escapeCsvValue(ends), escapeCsvValue(description));
+            itemCsvData.add(row);
+        }
+
+        if (qName.equals("Seller")) {
+            int num = Integer.parseInt(sellerRating);
+            String row = String.join(",", escapeCsvValue(userID), escapeCsvValue(sellerRating));
+            sellerCsvData.add(row);
+        }
+        
+        if (qName.equals("Bidder")) {
+            System.out.println("BUY PRICE");
+            sayi +=1;
+            System.out.println(sayi);
+            bidderLoc = false;
+            String row = String.join(",", escapeCsvValue(bidderID), escapeCsvValue(bidderRating), escapeCsvValue(bidderLocation), escapeCsvValue(bidderCountry));
+            bidderCsvData.add(row);
+        }
+        
+        if (qName.equals("Bid")) {
+            
+            String row = String.join(",", escapeCsvValue(itemID), escapeCsvValue(bidderID), escapeCsvValue(bidTime), escapeCsvValue(bidAmount));
+            bidInfoCsvData.add(row);
+        }
+    }
+
+    @Override
+    public void characters(char ch[], int start, int length) {
+        String content = new String(ch, start, length).trim();
+        if (!content.isEmpty()) {
+            switch (currentElement) {
+                case "Category":
+                    // Kategoriyi decode edip listeye ekle
+                    categories.add(content);
+                    break;
+                case "Name":
+                    name = content;
+                    break;
+                case "Currently":
+                    currently = strip(content);
+                    break;
+                case "First_Bid":
+                    firstBid = strip(content);
+                    break;
+                case "Buy_Price":
+                    buyPrice = strip(content);
+                    break;
+                case "Number_of_Bids":
+                    numberOfBids = content;
+                    break;
+                case "Location":
+                    if (bidderLoc) {
+                        bidderLocation = content;
+                    } else {
+                        location = content;
+                    }
+                    break;
+                case "Country":
+                    if (bidderLoc) {
+                        bidderCountry = content;
+                    } else {
+                        country = content;
+                    }
+                    break;
+                case "Started":
+                    started = content;
+                    break;
+                case "Ends":
+                    ends = content;
+                    break;
+                case "Description":
+                    description = content.length() > 4000 ? content.substring(0, 4000) : content;
+                    break;
+                case "Time":
+                    bidTime = content;
+                    break;
+                case "Amount":
+                    bidAmount = strip(content);
+                    break;
+            }
+        }
+    }
 }
